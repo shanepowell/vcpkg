@@ -69,7 +69,7 @@ namespace vcpkg::Install
                 continue;
             }
 
-            const std::string filename = file.filename().generic_string();
+            const std::string filename = file.filename().u8string();
             if (fs::is_regular_file(status) && (Strings::case_insensitive_ascii_equals(filename.c_str(), "CONTROL") ||
                                                 Strings::case_insensitive_ascii_equals(filename.c_str(), "BUILD_INFO")))
             {
@@ -80,44 +80,41 @@ namespace vcpkg::Install
             const std::string suffix = file.generic_u8string().substr(prefix_length + 1);
             const fs::path target = destination / suffix;
 
-            if (fs::is_directory(status))
+            switch (status.type())
             {
-                fs.create_directory(target, ec);
-                if (ec)
+                case fs::file_type::directory:
                 {
-                    System::println(System::Color::error, "failed: %s: %s", target.u8string(), ec.message());
+                    fs.create_directory(target, ec);
+                    if (ec)
+                    {
+                        System::println(System::Color::error, "failed: %s: %s", target.u8string(), ec.message());
+                    }
+
+                    // Trailing backslash for directories
+                    output.push_back(Strings::format(R"(%s/%s/)", destination_subdirectory, suffix));
+                    break;
                 }
-
-                // Trailing backslash for directories
-                output.push_back(Strings::format(R"(%s/%s/)", destination_subdirectory, suffix));
-                continue;
-            }
-
-            if (fs::is_regular_file(status))
-            {
-                if (fs.exists(target))
+                case fs::file_type::regular:
                 {
-                    System::println(System::Color::warning,
-                                    "File %s was already present and will be overwritten",
-                                    target.u8string(),
-                                    ec.message());
+                    if (fs.exists(target))
+                    {
+                        System::println(System::Color::warning,
+                                        "File %s was already present and will be overwritten",
+                                        target.u8string(),
+                                        ec.message());
+                    }
+                    fs.copy_file(file, target, fs::copy_options::overwrite_existing, ec);
+                    if (ec)
+                    {
+                        System::println(System::Color::error, "failed: %s: %s", target.u8string(), ec.message());
+                    }
+                    output.push_back(Strings::format(R"(%s/%s)", destination_subdirectory, suffix));
+                    break;
                 }
-                fs.copy_file(file, target, fs::copy_options::overwrite_existing, ec);
-                if (ec)
-                {
-                    System::println(System::Color::error, "failed: %s: %s", target.u8string(), ec.message());
-                }
-                output.push_back(Strings::format(R"(%s/%s)", destination_subdirectory, suffix));
-                continue;
+                default:
+                    System::println(System::Color::error, "failed: %s: cannot handle file type", file.u8string());
+                    break;
             }
-
-            if (!fs::status_known(status))
-            {
-                System::println(System::Color::error, "failed: %s: unknown status", file.u8string());
-                continue;
-            }
-
-            System::println(System::Color::error, "failed: %s: cannot handle file type", file.u8string());
         }
 
         std::sort(output.begin(), output.end());
@@ -292,12 +289,11 @@ namespace vcpkg::Install
                 System::println("Building package %s... ", display_name_with_features);
 
             auto result = [&]() -> Build::ExtendedBuildResult {
-                const Build::BuildPackageConfig build_config{
-                    *action.any_paragraph.source_control_file.value_or_exit(VCPKG_LINE_INFO),
-                    action.spec.triplet(),
-                    paths.port_dir(action.spec),
-                    action.build_options,
-                    action.feature_list};
+                const Build::BuildPackageConfig build_config{action.source_control_file.value_or_exit(VCPKG_LINE_INFO),
+                                                             action.spec.triplet(),
+                                                             paths.port_dir(action.spec),
+                                                             action.build_options,
+                                                             action.feature_list};
                 return Build::build_package(paths, build_config, status_db);
             }();
 
@@ -313,18 +309,6 @@ namespace vcpkg::Install
                 Paragraphs::try_load_cached_control_package(paths, action.spec).value_or_exit(VCPKG_LINE_INFO));
             auto code = aux_install(display_name_with_features, *bcf);
             return {code, std::move(bcf)};
-        }
-
-        if (plan_type == InstallPlanType::INSTALL)
-        {
-            if (use_head_version && is_user_requested)
-            {
-                System::println(
-                    System::Color::warning, "Package %s is already built -- not building from HEAD", display_name);
-            }
-            auto code = aux_install(display_name_with_features,
-                                    action.any_paragraph.binary_control_file.value_or_exit(VCPKG_LINE_INFO));
-            return code;
         }
 
         if (plan_type == InstallPlanType::EXCLUDED)
@@ -399,7 +383,7 @@ namespace vcpkg::Install
             }
             else if (const auto remove_action = action.remove_action.get())
             {
-                Remove::perform_remove_plan_action(paths, *remove_action, Remove::Purge::YES, status_db);
+                Remove::perform_remove_plan_action(paths, *remove_action, Remove::Purge::YES, &status_db);
             }
             else
             {
@@ -413,21 +397,21 @@ namespace vcpkg::Install
         return InstallSummary{std::move(results), timer.to_string()};
     }
 
-    static const std::string OPTION_DRY_RUN = "--dry-run";
-    static const std::string OPTION_USE_HEAD_VERSION = "--head";
-    static const std::string OPTION_NO_DOWNLOADS = "--no-downloads";
-    static const std::string OPTION_RECURSE = "--recurse";
-    static const std::string OPTION_KEEP_GOING = "--keep-going";
-    static const std::string OPTION_XUNIT = "--x-xunit";
+    static constexpr StringLiteral OPTION_DRY_RUN = "--dry-run";
+    static constexpr StringLiteral OPTION_USE_HEAD_VERSION = "--head";
+    static constexpr StringLiteral OPTION_NO_DOWNLOADS = "--no-downloads";
+    static constexpr StringLiteral OPTION_RECURSE = "--recurse";
+    static constexpr StringLiteral OPTION_KEEP_GOING = "--keep-going";
+    static constexpr StringLiteral OPTION_XUNIT = "--x-xunit";
 
-    static const std::array<CommandSwitch, 5> INSTALL_SWITCHES = {{
+    static constexpr std::array<CommandSwitch, 5> INSTALL_SWITCHES = {{
         {OPTION_DRY_RUN, "Do not actually build or install"},
         {OPTION_USE_HEAD_VERSION, "Install the libraries on the command line using the latest upstream sources"},
         {OPTION_NO_DOWNLOADS, "Do not download new sources"},
         {OPTION_RECURSE, "Allow removal of packages as part of installation"},
         {OPTION_KEEP_GOING, "Continue installing packages on failure"},
     }};
-    static const std::array<CommandSetting, 1> INSTALL_SETTINGS = {{
+    static constexpr std::array<CommandSetting, 1> INSTALL_SETTINGS = {{
         {OPTION_XUNIT, "File to output results in XUnit format (Internal use)"},
     }};
 
@@ -526,6 +510,11 @@ namespace vcpkg::Install
         }
     }
 
+    ///
+    /// <summary>
+    /// Run "install" command.
+    /// </summary>
+    ///
     void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, const Triplet& default_triplet)
     {
         // input sanitization
@@ -662,11 +651,9 @@ namespace vcpkg::Install
         if (action)
             if (auto p_install_plan = action->install_action.get())
             {
-                if (auto p_bcf = p_install_plan->any_paragraph.binary_control_file.get())
-                    return &p_bcf->core_paragraph;
-                else if (auto p_status = p_install_plan->any_paragraph.status_paragraph.get())
+                if (auto p_status = p_install_plan->installed_package.get())
                 {
-                    return &p_status->package;
+                    return &p_status->core->package;
                 }
             }
         return nullptr;

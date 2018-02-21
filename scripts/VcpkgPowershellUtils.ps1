@@ -27,6 +27,11 @@ function vcpkgCreateParentDirectoryIfNotExists([Parameter(Mandatory=$true)][stri
 
 function vcpkgRemoveItem([Parameter(Mandatory=$true)][string]$dirPath)
 {
+    if ([string]::IsNullOrEmpty($dirPath))
+    {
+        return
+    }
+
     if (Test-Path $dirPath)
     {
         Remove-Item $dirPath -Recurse -Force
@@ -94,11 +99,6 @@ function vcpkgCheckEqualFileHash(   [Parameter(Mandatory=$true)][string]$filePat
     }
 }
 
-if (vcpkgHasModule -moduleName 'BitsTransfer')
-{
-   Import-Module BitsTransfer -Verbose:$false
-}
-
 function vcpkgDownloadFile( [Parameter(Mandatory=$true)][string]$url,
                             [Parameter(Mandatory=$true)][string]$downloadPath)
 {
@@ -113,34 +113,11 @@ function vcpkgDownloadFile( [Parameter(Mandatory=$true)][string]$url,
     vcpkgRemoveItem $downloadPartPath
 
     $wc = New-Object System.Net.WebClient
-    $proxyAuth = !$wc.Proxy.IsBypassed($url)
-    if ($proxyAuth)
+    if (!$wc.Proxy.IsBypassed($url))
     {
         $wc.Proxy.Credentials = vcpkgGetCredentials
     }
 
-    # Some download (e.g. git from github)fail with Start-BitsTransfer
-    if (vcpkgHasCommand -commandName 'Start-BitsTransfer')
-    {
-        try
-        {
-            if ($proxyAuth)
-            {
-                $PSDefaultParameterValues.Add("Start-BitsTransfer:ProxyAuthentication","Basic")
-                $PSDefaultParameterValues.Add("Start-BitsTransfer:ProxyCredential", $wc.Proxy.Credentials)
-            }
-            Start-BitsTransfer -Source $url -Destination $downloadPartPath -ErrorAction Stop
-            Move-Item -Path $downloadPartPath -Destination $downloadPath
-            return
-        }
-        catch [System.Exception]
-        {
-            # If BITS fails for any reason, delete any potentially partially downloaded files and continue
-            vcpkgRemoveItem $downloadPartPath
-        }
-    }
-
-    Write-Verbose("Downloading $Dependency...")
     $wc.DownloadFile($url, $downloadPartPath)
     Move-Item -Path $downloadPartPath -Destination $downloadPath
 }
@@ -188,22 +165,84 @@ function vcpkgExtractFile(  [Parameter(Mandatory=$true)][string]$file,
     }
     else
     {
-        Move-Item -Path $destinationPartial -Destination $output
+        Move-Item -Path "$destinationPartial" -Destination $output
     }
 }
 
 function vcpkgInvokeCommand()
 {
     param ( [Parameter(Mandatory=$true)][string]$executable,
-                                        [string]$arguments = "",
-                                        [switch]$wait)
+                                        [string]$arguments = "")
 
     Write-Verbose "Executing: ${executable} ${arguments}"
-    $process = Start-Process -FilePath $executable -ArgumentList $arguments -PassThru
-    if ($wait)
+    $process = Start-Process -FilePath "`"$executable`"" -ArgumentList $arguments -PassThru -NoNewWindow
+    Wait-Process -InputObject $process
+    $ec = $process.ExitCode
+    Write-Verbose "Execution terminated with exit code $ec."
+    return $ec
+}
+
+function vcpkgInvokeCommandClean()
+{
+    param ( [Parameter(Mandatory=$true)][string]$executable,
+                                        [string]$arguments = "")
+
+    Write-Verbose "Clean-Executing: ${executable} ${arguments}"
+    $scriptsDir = split-path -parent $script:MyInvocation.MyCommand.Definition
+    $cleanEnvScript = "$scriptsDir\VcpkgPowershellUtils-ClearEnvironment.ps1"
+    $tripleQuotes = "`"`"`""
+    $argumentsWithEscapedQuotes = $arguments -replace "`"", $tripleQuotes
+    $command = ". $tripleQuotes$cleanEnvScript$tripleQuotes; & $tripleQuotes$executable$tripleQuotes $argumentsWithEscapedQuotes"
+    $arg = "-NoProfile", "-ExecutionPolicy Bypass", "-command $command"
+
+    $process = Start-Process -FilePath powershell.exe -ArgumentList $arg -PassThru -NoNewWindow
+    Wait-Process -InputObject $process
+    $ec = $process.ExitCode
+    Write-Verbose "Execution terminated with exit code $ec."
+    return $ec
+}
+
+function vcpkgFormatElapsedTime([TimeSpan]$ts)
+{
+    if ($ts.TotalHours -ge 1)
     {
-        Wait-Process -InputObject $process
-        $ec = $process.ExitCode
-        Write-Verbose "Execution terminated with exit code $ec."
+        return [string]::Format( "{0:N2} h", $ts.TotalHours);
     }
+
+    if ($ts.TotalMinutes -ge 1)
+    {
+        return [string]::Format( "{0:N2} min", $ts.TotalMinutes);
+    }
+
+    if ($ts.TotalSeconds -ge 1)
+    {
+        return [string]::Format( "{0:N2} s", $ts.TotalSeconds);
+    }
+
+    if ($ts.TotalMilliseconds -ge 1)
+    {
+        return [string]::Format( "{0:N2} ms", $ts.TotalMilliseconds);
+    }
+
+    throw $ts
+}
+
+function vcpkgFindFileRecursivelyUp()
+{
+    param(
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory=$true)][string]$startingDir,
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory=$true)][string]$filename
+    )
+
+    $currentDir = $startingDir
+
+    while (!($currentDir -eq "") -and !(Test-Path "$currentDir\$filename"))
+    {
+        Write-Verbose "Examining $currentDir for $filename"
+        $currentDir = Split-path $currentDir -Parent
+    }
+    Write-Verbose "Examining $currentDir for $filename - Found"
+    return $currentDir
 }
