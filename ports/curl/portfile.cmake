@@ -1,18 +1,16 @@
 include(vcpkg_common_functions)
+
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO curl/curl
-    REF curl-7_58_0
-    SHA512 148c25152732dd5ad2626bc70c7725577e25033a73eecefa4dd820927ec552f9c2d0235cc3f597404d3893eced7d5d2bd9522f6302b7f930e9f65912ac2c91f6
+    REF curl-7_61_1
+    SHA512 09fa3c87f8d516eabe3241247a5094c32ee0481961cf85bf78ecb13acdf23bb2ec82f113d2660271d22742c79e76d73fb122730fa28e34c7f5477c05a4a6534c
     HEAD_REF master
-)
-
-vcpkg_apply_patches(
-    SOURCE_PATH ${SOURCE_PATH}
     PATCHES
         ${CMAKE_CURRENT_LIST_DIR}/0001_cmake.patch
         ${CMAKE_CURRENT_LIST_DIR}/0002_fix_uwp.patch
         ${CMAKE_CURRENT_LIST_DIR}/0003_fix_libraries.patch
+        ${CMAKE_CURRENT_LIST_DIR}/0004_nghttp2_staticlib.patch
 )
 
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "static" CURL_STATICLIB)
@@ -20,10 +18,6 @@ string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "static" CURL_STATICLIB)
 # Support HTTP2 TSL Download https://curl.haxx.se/ca/cacert.pem rename to curl-ca-bundle.crt, copy it to libcurl.dll location.
 set(HTTP2_OPTIONS)
 if("http2" IN_LIST FEATURES)
-    if(VCPKG_CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
-        message(FATAL_ERROR "The http2 feature cannot be enabled when building for UWP.")
-    endif()
-
     set(HTTP2_OPTIONS -DUSE_NGHTTP2=ON)
 endif()
 
@@ -95,6 +89,12 @@ vcpkg_configure_cmake(
 
 vcpkg_install_cmake()
 
+if(EXISTS ${CURRENT_PACKAGES_DIR}/lib/cmake/curl)
+    vcpkg_fixup_cmake_targets(CONFIG_PATH lib/cmake/curl)
+elseif(EXISTS ${CURRENT_PACKAGES_DIR}/share/curl)
+    vcpkg_fixup_cmake_targets(CONFIG_PATH share/curl)
+endif()
+
 file(INSTALL ${SOURCE_PATH}/COPYING DESTINATION ${CURRENT_PACKAGES_DIR}/share/curl RENAME copyright)
 file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
 
@@ -132,3 +132,5 @@ file(WRITE ${CURRENT_PACKAGES_DIR}/include/curl/curl.h "${CURL_H}")
 vcpkg_copy_pdbs()
 
 file(COPY ${CMAKE_CURRENT_LIST_DIR}/usage DESTINATION ${CURRENT_PACKAGES_DIR}/share/${PORT})
+
+vcpkg_test_cmake(PACKAGE_NAME CURL MODULE)

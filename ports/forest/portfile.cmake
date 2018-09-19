@@ -1,16 +1,15 @@
-# Ηeader-only library
-
 include(vcpkg_common_functions)
-set(SOURCE_PATH ${CURRENT_BUILDTREES_DIR}/src/forest-4.5.0)
-vcpkg_download_distfile(ARCHIVE
-    URLS "https://github.com/xorz57/forest/archive/4.5.0.zip"
-    FILENAME "forest-4.5.0.zip"
-    SHA512 ae256ad38802d0827cfcd45ffae35ddb95cf74e38cf3e5d806f6e2215f701abfb8159f82e2bb6362788fe96a9f9008429d366e7abbc7980b29b3528052cfe43e
+
+vcpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO xorz57/forest
+    REF bc6b82ce436dfbf60d6e8882252c55cf923ad99e
+    SHA512 e711148025c40fb73e6ae221fe5a4416bea006994d9ff958d565cd3cefa75c9ee7241087c7470ecb6530be073ac9171fe724351898ecd33db61f5752c3a950bc
+    HEAD_REF master
 )
-vcpkg_extract_source_archive(${ARCHIVE})
 
 # Handle headers
-file(INSTALL ${SOURCE_PATH}/include DESTINATION ${CURRENT_PACKAGES_DIR} FILES_MATCHING PATTERN "*.h")
+file(INSTALL ${SOURCE_PATH}/include DESTINATION ${CURRENT_PACKAGES_DIR} FILES_MATCHING PATTERN "*.hpp")
 
 # Handle copyright
 file(INSTALL ${SOURCE_PATH}/LICENSE DESTINATION ${CURRENT_PACKAGES_DIR}/share/forest RENAME copyright)

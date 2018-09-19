@@ -47,13 +47,14 @@
   <PropertyGroup Condition="'$(Platform)|$(ApplicationType)|$(ApplicationTypeRevision)' == 'arm64|Windows Store|10.0'">
     <@PACKAGEID@VcpkgEnabled Condition="'$(@PACKAGEID@VcpkgEnabled)' == ''">true</@PACKAGEID@VcpkgEnabled>
     <@PACKAGEID@VcpkgTriplet Condition="'$(@PACKAGEID@VcpkgTriplet)' == ''">arm64-uwp</@PACKAGEID@VcpkgTriplet>
-  </PropertyGroup>  
+  </PropertyGroup>
 
   <PropertyGroup Condition="'$(@PACKAGEID@VcpkgEnabled)' == 'true'">
     <@PACKAGEID@VcpkgConfiguration Condition="'$(@PACKAGEID@VcpkgConfiguration)' == ''">$(Configuration)</@PACKAGEID@VcpkgConfiguration>
     <@PACKAGEID@VcpkgNormalizedConfiguration Condition="$(@PACKAGEID@VcpkgConfiguration.StartsWith('Debug'))">Debug</@PACKAGEID@VcpkgNormalizedConfiguration>
     <@PACKAGEID@VcpkgNormalizedConfiguration Condition="$(@PACKAGEID@VcpkgConfiguration.StartsWith('Release')) or '$(@PACKAGEID@VcpkgConfiguration)' == 'RelWithDebInfo' or '$(@PACKAGEID@VcpkgConfiguration)' == 'MinSizeRel'">Release</@PACKAGEID@VcpkgNormalizedConfiguration>
     <@PACKAGEID@VcpkgRoot Condition="'$(@PACKAGEID@VcpkgRoot)' == ''">$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), .vcpkg-root))\installed\$(@PACKAGEID@VcpkgTriplet)\</@PACKAGEID@VcpkgRoot>
+    <@PACKAGEID@VcpkgApplocalDeps Condition="'$(@PACKAGEID@VcpkgApplocalDeps)' == ''">true</@PACKAGEID@VcpkgApplocalDeps>
   </PropertyGroup>
 
   <ItemDefinitionGroup Condition="'$(@PACKAGEID@VcpkgEnabled)' == 'true'">
@@ -77,7 +78,7 @@
     <Message Text="Vcpkg is unable to link because we cannot decide between Release and Debug libraries. Please define the property @PACKAGEID@VcpkgConfiguration to be 'Release' or 'Debug' (currently '$(@PACKAGEID@VcpkgConfiguration)')." Importance="High" Condition="'$(@PACKAGEID@VcpkgEnabled)' == 'true' and '$(@PACKAGEID@VcpkgNormalizedConfiguration)' == ''"/>
   </Target>
 
-  <Target Name="@PACKAGEID@AppLocalFromInstalled" AfterTargets="CopyFilesToOutputDirectory" BeforeTargets="CopyLocalFilesOutputGroup;RegisterOutput" Condition="'$(@PACKAGEID@VcpkgEnabled)' == 'true'">
+  <Target Name="@PACKAGEID@AppLocalFromInstalled" AfterTargets="CopyFilesToOutputDirectory" BeforeTargets="CopyLocalFilesOutputGroup;RegisterOutput" Condition="'$(@PACKAGEID@VcpkgEnabled)' == 'true' and '$(@PACKAGEID@VcpkgApplocalDeps)' == 'true'">
     <WriteLinesToFile
     File="$(TLogLocation)$(ProjectName).write.1u.tlog"
     Lines="^$(TargetPath);$([System.IO.Path]::Combine($(ProjectDir),$(IntDir)))vcpkg.applocal.log" Encoding="Unicode"/>
